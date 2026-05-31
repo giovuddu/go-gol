@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"os"
 	"strconv"
 	"time"
+
+	"golang.org/x/term"
 )
 
 type CellState int
@@ -45,19 +48,21 @@ func (g *Grid) setCell(x, y int, v CellState) {
 	g.cells[g.idx(x, y)] = v
 }
 
-func (g *Grid) plot() {
+func (g *Grid) plot(buf *bytes.Buffer) {
+	fmt.Fprint(buf, "\033[H")
 	for y := 0; y < g.h; y++ {
 		ln := g.cells[(y * g.w):(y*g.w + g.w)]
 
 		for _, v := range ln {
+			render := ""
 			if v == CellDead {
-				fmt.Print("░░")
+				render = "  "
 			} else {
-				fmt.Print("██")
+				render = "██"
 			}
+			fmt.Fprint(buf, render)
 		}
-
-		fmt.Println()
+		fmt.Fprint(buf, "\n")
 	}
 }
 
@@ -117,28 +122,7 @@ func nextGrid(oldG *Grid) *Grid {
 	return newG
 }
 
-// func getTermSize() (int, int) {
-// 	w, h, err := term.GetSize(int(os.Stdout.Fd()))
-// 	if err != nil {
-// 		fmt.Println("Fatal error while reading terminal size")
-// 		os.Exit(1)
-// 	}
-//
-// 	return w / 2, h
-// }
-
 func main() {
-	args := os.Args[1:]
-	if len(args) > 2 {
-		fmt.Println("Error: too many arguments")
-		os.Exit(1)
-	}
-
-	if len(args) < 2 {
-		fmt.Println("Error: too few arguments")
-		os.Exit(1)
-	}
-
 	mustAtoi := func(s string) int {
 		n, err := strconv.Atoi(s)
 		if err != nil {
@@ -147,8 +131,36 @@ func main() {
 		}
 		return n
 	}
-	w := mustAtoi(args[0])
-	h := mustAtoi(args[1])
+
+	usageAndExit := func() {
+		fmt.Println("Usage: gol <size w h | term>")
+		os.Exit(1)
+	}
+
+	args := os.Args[1:]
+	if len(args) == 0 {
+		usageAndExit()
+	}
+
+	var w, h int
+	switch args[0] {
+	case "size":
+		if len(args) != 3 {
+			usageAndExit()
+		}
+		w = mustAtoi(args[1])
+		h = mustAtoi(args[2])
+	case "term":
+		var err error
+		w, h, err = term.GetSize(int(os.Stdout.Fd()))
+		if err != nil {
+			fmt.Println("Error: couldn't read terminal size")
+			os.Exit(1)
+		}
+		w /= 2
+	default:
+		usageAndExit()
+	}
 
 	if w < 3 || h < 3 {
 		fmt.Println("Error: grid must be at least 3x3")
@@ -156,14 +168,23 @@ func main() {
 	}
 	g := newGrid(w, h)
 	g.randomize()
-	fmt.Print("\033[2J\033[H")
-	g.plot()
 
+	fmt.Print("\033[2J")
+	fmt.Print("\033[?25l")
+	defer fmt.Print("\033[?25h")
+
+	buf := new(bytes.Buffer)
 	ticker := time.NewTicker(time.Second / 10)
+	defer ticker.Stop()
 
 	for range ticker.C {
+		buf.Reset()
+		g.plot(buf)
+		_, err := buf.WriteTo(os.Stdout)
+		if err != nil {
+			fmt.Print("Error: problem while rendering")
+			os.Exit(1)
+		}
 		g = nextGrid(g)
-		fmt.Print("\033[2J\033[H")
-		g.plot()
 	}
 }
