@@ -53,6 +53,10 @@ func (g *Grid) plot(buf *bytes.Buffer) {
 	for y := 0; y < g.h; y++ {
 		ln := g.cells[(y * g.w):(y*g.w + g.w)]
 
+		if y > 0 {
+			fmt.Fprint(buf, "\n")
+		}
+
 		for _, v := range ln {
 			render := ""
 			if v == CellDead {
@@ -62,7 +66,6 @@ func (g *Grid) plot(buf *bytes.Buffer) {
 			}
 			fmt.Fprint(buf, render)
 		}
-		fmt.Fprint(buf, "\n")
 	}
 }
 
